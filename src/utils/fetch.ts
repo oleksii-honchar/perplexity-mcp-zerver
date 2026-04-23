@@ -190,7 +190,8 @@ export async function fetchSimpleContent(
   try {
     const response = await performHttpRequest(url, ctx);
 
-    const contentType = response.headers["content-type"] ?? "";
+    const rawContentType = response.headers["content-type"] ?? "";
+    const contentType = typeof rawContentType === "string" ? rawContentType : String(rawContentType);
     ctx?.log?.("info", `Content-Type: ${contentType}, Status: ${response.status}`);
 
     const contentTypeError = validateContentType(contentType, ctx);

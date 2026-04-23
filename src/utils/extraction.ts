@@ -50,7 +50,7 @@ async function performContentTypeCheck(
     const contentType = headResponse.headers["content-type"];
     ctx.log("info", `Content-Type: ${contentType}`);
 
-    if (contentType && !contentType.includes("html") && !contentType.includes("text/plain")) {
+    if (contentType && typeof contentType === "string" && !contentType.includes("html") && !contentType.includes("text/plain")) {
       const errorMsg = `Unsupported content type: ${contentType}`;
       ctx.log("error", errorMsg);
       return { url: originalUrl, error: errorMsg };
