@@ -1,11 +1,11 @@
 /**
- * Tool implementation for documentation retrieval via Perplexity API
+ * Tool implementation for documentation retrieval
  */
 
 import type { PerplexityApiClient } from "../server/modules/PerplexityApiClient.js";
 
 /**
- * Handles documentation fetching and formatting via Perplexity API
+ * Handles documentation fetching and formatting
  */
 export default async function getDocumentation(
   args: { query: string; context?: string },
@@ -27,13 +27,5 @@ export default async function getDocumentation(
 10. Related tools/libraries that work well with it
 
 Crucially, also provide the main official URL(s) for this documentation on separate lines, prefixed with 'Official URL(s):'.`;
-
-  return apiClient.chatCompletion([
-    {
-      role: "system",
-      content:
-        "You are a technical documentation assistant. Provide structured, accurate documentation with examples, best practices, and links to official resources when available.",
-    },
-    { role: "user", content: prompt },
-  ]);
+  return await apiClient.chatCompletion([{ role: "user", content: prompt }]);
 }

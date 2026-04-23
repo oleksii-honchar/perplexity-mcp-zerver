@@ -1,14 +1,9 @@
 import { Readability } from "@mozilla/readability";
 import axios from "axios";
-/**
- * Content extraction utilities using axios + jsdom + Readability.
- * No browser automation required.
- */
 import { JSDOM } from "jsdom";
 import { CONFIG } from "../server/config.js";
 import type { PageContentResult } from "../types/index.js";
 import { fetchSimpleContent } from "./fetch.js";
-import { logError, logInfo, logWarn } from "./logging.js";
 
 // Helper functions for content extraction
 function detectAndRewriteGitHubUrl(
@@ -20,12 +15,12 @@ function detectAndRewriteGitHubUrl(
       const pathParts = parsedUrl.pathname.split("/").filter((part) => part.length > 0);
       if (pathParts.length === 2) {
         const gitingestUrl = `https://gitingest.com${parsedUrl.pathname}`;
-        logInfo(`Detected GitHub repo URL. Rewriting to: ${gitingestUrl}`);
+        console.log(`Detected GitHub repo URL. Rewriting to: ${gitingestUrl}`);
         return { extractionUrl: gitingestUrl, isGitHubRepo: true };
       }
     }
   } catch (urlParseError) {
-    logWarn(`Failed to parse URL for GitHub check: ${urlParseError}`);
+    console.warn(`Failed to parse URL for GitHub check: ${urlParseError}`);
   }
   return { extractionUrl: originalUrl, isGitHubRepo: false };
 }
@@ -40,46 +35,27 @@ async function performContentTypeCheck(
   }
 
   try {
-    logInfo(`Performing HEAD request for ${extractionUrl}...`);
+    console.log(`Performing HEAD request for ${extractionUrl}...`);
     const headResponse = await axios.head(extractionUrl, {
       timeout: 5000,
       headers: { "User-Agent": CONFIG.USER_AGENT },
     });
-    const contentType = headResponse.headers["content-type"];
-    logInfo(`Content-Type: ${contentType}`);
+    const rawContentType = headResponse.headers["content-type"];
+    const contentType = typeof rawContentType === "string" ? rawContentType : String(rawContentType);
+    console.log(`Content-Type: ${contentType}`);
 
-    if (contentType && typeof contentType === "string" && !contentType.includes("html") && !contentType.includes("text/plain")) {
+    if (contentType && !contentType.includes("html") && !contentType.includes("text/plain")) {
       const errorMsg = `Unsupported content type: ${contentType}`;
-      logError(errorMsg);
+      console.error(errorMsg);
       return { url: originalUrl, error: errorMsg };
     }
   } catch (headError) {
-    logWarn(
-      `HEAD request failed for ${extractionUrl}: ${headError instanceof Error ? headError.message : String(headError)}. Proceeding with GET request.`,
+    console.warn(
+      `HEAD request failed for ${extractionUrl}: ${headError instanceof Error ? headError.message : String(headError)}. Proceeding with fetch.`,
     );
   }
 
   return null;
-}
-
-async function fetchPageHtml(extractionUrl: string): Promise<{ html: string; pageTitle: string }> {
-  logInfo(`Fetching ${extractionUrl} for extraction...`);
-  const response = await axios.get(extractionUrl, {
-    timeout: CONFIG.TIMEOUT_PROFILES.navigation,
-    headers: {
-      "User-Agent": CONFIG.USER_AGENT,
-      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    },
-    maxRedirects: 3,
-  });
-
-  const html = typeof response.data === "string" ? response.data : String(response.data);
-
-  // Extract title from HTML
-  const titleMatch = html.match(/<title[^>]*>([^<]*)<\/title>/i);
-  const pageTitle = titleMatch?.[1]?.trim() || "";
-
-  return { html, pageTitle };
 }
 
 function extractGeneralContent(
@@ -91,7 +67,7 @@ function extractGeneralContent(
   const article = reader.parse();
 
   if (article?.textContent && article.textContent.trim().length > (article.title?.length || 0)) {
-    logInfo(`Readability extracted content (${article.textContent.length} chars)`);
+    console.log(`Readability extracted content (${article.textContent.length} chars)`);
     return {
       url: originalUrl,
       title: article.title || pageTitle,
@@ -108,39 +84,33 @@ function extractFallbackContent(
   originalUrl: string,
   pageTitle: string,
 ): PageContentResult | null {
-  logWarn("Readability failed. Attempting fallback selectors...");
+  console.warn("Readability failed. Attempting fallback selectors...");
 
-  const document = dom.window.document;
-  const selectors = [
-    "article",
-    "main",
-    '[role="main"]',
-    "#content",
-    ".content",
-    "#main",
-    ".main",
-    "#article-body",
-    ".article-body",
-    ".post-content",
-    ".entry-content",
-  ];
+  const fallbackResult = (() => {
+    const selectors = [
+      "article",
+      "main",
+      '[role="main"]',
+      "#content",
+      ".content",
+      "#main",
+      ".main",
+      "#article-body",
+      ".article-body",
+      ".post-content",
+      ".entry-content",
+    ];
 
-  for (const selector of selectors) {
-    const element = document.querySelector(selector) as HTMLElement | null;
-    if (element?.innerText && element.innerText.trim().length > 100) {
-      logInfo(`Fallback extracted content (${element.innerText.length} chars) using selector: ${selector}`);
-      return {
-        url: originalUrl,
-        title: pageTitle,
-        textContent: element.innerText.trim(),
-        error: null,
-      };
+    for (const selector of selectors) {
+      const element = dom.window.document.querySelector(selector) as HTMLElement | null;
+      if (element?.innerText && element.innerText.trim().length > 100) {
+        console.log(`Fallback using selector: ${selector}`);
+        return { text: element.innerText.trim(), selector: selector };
+      }
     }
-  }
 
-  // Advanced body text cleanup
-  const bodyClone = document.body?.cloneNode(true) as HTMLElement | undefined;
-  if (bodyClone) {
+    // Advanced body text cleanup
+    const bodyClone = dom.window.document.body.cloneNode(true) as HTMLElement;
     const elementsToRemove = bodyClone.querySelectorAll(
       'nav, header, footer, aside, script, style, noscript, button, form, [role="navigation"], [role="banner"], [role="contentinfo"], [aria-hidden="true"]',
     );
@@ -151,14 +121,23 @@ function extractFallbackContent(
 
     const bodyText = bodyClone.innerText.trim();
     if (bodyText.length > 200) {
-      logInfo(`Fallback using filtered body text (${bodyText.length} chars)`);
-      return {
-        url: originalUrl,
-        title: pageTitle,
-        textContent: bodyText,
-        error: null,
-      };
+      console.log("Fallback using filtered body text.");
+      return { text: bodyText, selector: "body (filtered)" };
     }
+
+    return null;
+  })();
+
+  if (fallbackResult) {
+    console.log(
+      `Fallback extracted content (${fallbackResult.text.length} chars) using selector: ${fallbackResult.selector}`,
+    );
+    return {
+      url: originalUrl,
+      title: pageTitle,
+      textContent: fallbackResult.text,
+      error: null,
+    };
   }
 
   return null;
@@ -175,10 +154,8 @@ function formatExtractionError(
   if (error instanceof Error) {
     if (error.message.includes("timeout")) {
       errorReason = "Navigation or content loading timed out.";
-    } else if (error.message.includes("ENOTFOUND") || error.message.includes("getaddrinfo")) {
-      errorReason = "Could not resolve the URL.";
-    } else if (error.message.includes("ECONNREFUSED")) {
-      errorReason = "Connection refused.";
+    } else if (error.message.includes("net::") || error.message.includes("Failed to load")) {
+      errorReason = "Could not resolve or load the URL.";
     } else if (error.message.includes("extract meaningful content")) {
       errorReason = "Readability and fallback selectors failed.";
     } else {
@@ -192,7 +169,7 @@ function formatExtractionError(
 
 /**
  * Extracts content from a single page using axios and Readability.
- * Includes GitHub/Gitingest URL rewriting, content-type pre-checking, and fallback extraction.
+ * Includes GitHub/Gitingest URL rewriting and content-type pre-checking.
  */
 export async function fetchSinglePageContent(url: string): Promise<PageContentResult> {
   const originalUrl = url;
@@ -201,27 +178,44 @@ export async function fetchSinglePageContent(url: string): Promise<PageContentRe
   const { extractionUrl, isGitHubRepo } = detectAndRewriteGitHubUrl(originalUrl);
 
   // Content-Type pre-check (skip for GitHub)
-  const contentTypeError = await performContentTypeCheck(
-    extractionUrl,
-    isGitHubRepo,
-    originalUrl,
-  );
+  const contentTypeError = await performContentTypeCheck(extractionUrl, isGitHubRepo, originalUrl);
   if (contentTypeError) {
     return contentTypeError;
   }
 
   try {
-    // Fetch page HTML via axios
-    const { html, pageTitle } = await fetchPageHtml(extractionUrl);
+    console.log(`Fetching ${extractionUrl}...`);
+    const response = await axios.get(extractionUrl, {
+      timeout: CONFIG.TIMEOUT_PROFILES.navigation,
+      headers: {
+        "User-Agent": CONFIG.USER_AGENT,
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      },
+      maxRedirects: 3,
+    });
 
-    // Create JSDOM
+    const html = response.data;
+    const pageTitle = (() => {
+      const titleMatch = html.match(/<title[^>]*>([^<]*)<\/title>/i);
+      return titleMatch ? titleMatch[1].trim() : extractionUrl;
+    })();
+
+    // Suppress CSS/HTML parsing output
+    const virtualConsole = new (await import("jsdom")).VirtualConsole();
+    virtualConsole.on("error", (err: string) => {
+      if (!err.includes("Could not parse CSS") && !err.includes("Error parsing")) {
+        console.warn(`JSDOM error: ${err}`);
+      }
+    });
+
     const dom = new JSDOM(html, {
       url: extractionUrl,
+      virtualConsole,
       resources: undefined,
       runScripts: "outside-only",
     });
 
-    // Try general Readability extraction first
+    // Try general Readability extraction
     const generalResult = extractGeneralContent(dom, originalUrl, pageTitle);
     if (generalResult) {
       return generalResult;
@@ -235,7 +229,7 @@ export async function fetchSinglePageContent(url: string): Promise<PageContentRe
 
     return { url: originalUrl, error: "No meaningful content extracted" };
   } catch (error) {
-    logError(
+    console.error(
       `Error extracting content from ${extractionUrl}: ${error instanceof Error ? error.message : String(error)}`,
     );
     return formatExtractionError(error, extractionUrl, originalUrl);
@@ -243,9 +237,9 @@ export async function fetchSinglePageContent(url: string): Promise<PageContentRe
 }
 
 /**
- * Extracts all same-domain links from a page's HTML.
+ * Extracts all same-domain links from fetched HTML content.
  * Filters out non-HTTP(S), anchor, mailto, and JavaScript links. Resolves relative URLs.
- * @param html - The page HTML content
+ * @param html - The HTML content to parse
  * @param baseUrl - The base URL for resolving relative links
  * @returns Array of { url, text } for same-domain links
  */
@@ -271,30 +265,33 @@ export function extractSameDomainLinks(
         ) {
           return null;
         }
-        return { url: new URL(href, baseUrl).href, text: text.trim() };
+        return { url: href, text: text.trim() };
       })
-      .filter(Boolean) as { url: string; text: string }[];
+      .filter(Boolean);
 
-    const resolvedLinks = links.filter((link) => {
+    const resolvedLinks: { url: string; text: string }[] = [];
+    for (const link of links) {
+      if (!link) continue;
       try {
-        return new URL(link.url).hostname === baseHostname;
+        const absoluteUrl = new URL(link.url, baseUrl).href;
+        if (new URL(absoluteUrl).hostname === baseHostname) {
+          resolvedLinks.push({ url: absoluteUrl, text: link.text || absoluteUrl });
+        }
       } catch {
-        return false;
+        // Ignore invalid URLs
       }
-    });
-
+    }
     // Prioritize links with longer text, limit count
     resolvedLinks.sort((a, b) => b.text.length - a.text.length);
     return resolvedLinks.slice(0, 10);
   } catch (error) {
-    // On error, return empty array
     return [];
   }
 }
 
 /**
  * Recursively fetches content from a root URL, exploring links up to maxDepth.
- * Uses fetchSinglePageContent and extractSameDomainLinks.
+ * Uses fetchSimpleContent and extractSameDomainLinks.
  * @param startUrl - The root URL to start crawling
  * @param maxDepth - Maximum recursion depth
  * @param currentDepth - Current recursion depth
@@ -313,8 +310,9 @@ export async function recursiveFetch(
   if (currentDepth > maxDepth || visitedUrls.has(startUrl) || globalTimeoutSignal.timedOut) {
     return;
   }
-  logInfo(`[Depth ${currentDepth}] Fetching: ${startUrl}`);
+  console.log(`[Depth ${currentDepth}] Fetching: ${startUrl}`);
   visitedUrls.add(startUrl);
+
   const pageResult: PageContentResult = {
     url: startUrl,
     title: null,
@@ -322,41 +320,46 @@ export async function recursiveFetch(
     error: null,
   };
   let linksToExplore: { url: string; text: string }[] = [];
+
   try {
     if (currentDepth === 1) {
-      // Use Readability for the initial page
+      // Use full extraction for the initial page
       const result = await fetchSinglePageContent(startUrl);
       pageResult.title = result.title;
       pageResult.textContent = result.textContent;
       pageResult.error = result.error || null;
-      // Extract links from the fetched HTML for further exploration
+
+      // Extract links for deeper exploration
       try {
         const response = await axios.get(startUrl, {
-          timeout: 8000,
+          timeout: 10000,
           headers: { "User-Agent": CONFIG.USER_AGENT },
+          maxRedirects: 3,
         });
-        const html = typeof response.data === "string" ? response.data : String(response.data);
-        linksToExplore = extractSameDomainLinks(html, startUrl);
+        linksToExplore = extractSameDomainLinks(response.data, startUrl);
       } catch {
         // Ignore link extraction errors
       }
     } else {
-      // Use the simpler fetch for deeper levels
+      // Use simpler fetch for deeper levels
       const result = await fetchSimpleContent(startUrl);
       pageResult.title = result.title;
       pageResult.textContent = result.textContent;
       pageResult.error = result.error || null;
     }
+
     if (pageResult.textContent === null && pageResult.error === null) {
       pageResult.error = "Failed to extract content";
     }
   } catch (error) {
-    logError(
+    console.error(
       `[Depth ${currentDepth}] Error fetching ${startUrl}: ${error instanceof Error ? error.message : String(error)}`,
     );
     pageResult.error = error instanceof Error ? error.message : String(error);
   }
+
   results.push(pageResult);
+
   // Explore links only if depth allows and initial fetch was successful
   if (currentDepth < maxDepth && !pageResult.error && linksToExplore.length > 0) {
     const linksToFollow = linksToExplore.slice(0, 3); // Limit to 3 links per page

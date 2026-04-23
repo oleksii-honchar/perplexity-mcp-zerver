@@ -1,6 +1,6 @@
 /**
  * Tool handler for 'check_deprecated_code'.
- * Analyzes code for deprecated features or patterns and suggests replacements using Perplexity API.
+ * Analyzes code for deprecated features or patterns and suggests replacements.
  * @param args - { code: string; technology?: string }
  * @param apiClient - PerplexityApiClient instance
  * @returns The deprecation analysis string result
@@ -28,13 +28,5 @@ Please provide:
 7. Performance implications
 8. Backward compatibility considerations
 9. Testing recommendations for the changes`;
-
-  return apiClient.chatCompletion([
-    {
-      role: "system",
-      content:
-        "You are a code modernization assistant. Identify deprecated patterns, suggest replacements, and provide migration guidance with before/after examples.",
-    },
-    { role: "user", content: prompt },
-  ]);
+  return await apiClient.chatCompletion([{ role: "user", content: prompt }]);
 }

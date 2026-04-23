@@ -3,7 +3,7 @@
  * Centralized exports from focused type modules
  */
 
-// ─── BROWSER & CONTENT EXTRACTION TYPES ───────────────────────────────
+// ─── CONTENT EXTRACTION TYPES ─────────────────────────────────────────
 export type {
   PageContentResult,
   RecursiveFetchResult,
@@ -16,9 +16,8 @@ export type {
   IDatabaseManager,
 } from "./database.js";
 
-// ─── TOOL & SEARCH TYPES ──────────────────────────────────────────────
+// ─── TOOL TYPES ───────────────────────────────────────────────────────
 export type {
-  ISearchEngine,
   ToolHandler,
   ToolHandlersRegistry,
   ChatPerplexityArgs,

@@ -25,48 +25,44 @@ vi.mock("node:url", () => ({
   fileURLToPath: vi.fn().mockReturnValue("/mock/path/to/module.js"),
 }));
 
-// Mock bun:sqlite
-vi.mock("bun:sqlite", () => {
-  const mockStmt = {
-    all: vi.fn(),
-    run: vi.fn(),
-  };
-
+// Mock better-sqlite3
+vi.mock("better-sqlite3", () => {
   return {
-    Database: vi.fn().mockImplementation(() => ({
+    default: vi.fn().mockImplementation(() => ({
       close: vi.fn(),
       exec: vi.fn(),
-      prepare: vi.fn().mockReturnValue(mockStmt),
-      query: vi.fn().mockReturnValue(mockStmt),
+      prepare: vi.fn().mockReturnValue({
+        run: vi.fn(),
+        all: vi.fn(),
+      }),
     })),
   };
 });
 
 // Mock database utilities
-vi.mock("../../utils/db.js", () => ({
+const mockDbUtils = vi.hoisted(() => ({
   initializeDatabase: vi.fn(),
   getChatHistory: vi.fn(),
   saveChatMessage: vi.fn(),
 }));
+vi.mock("../../utils/db.js", () => mockDbUtils);
 
 // Mock logging
-vi.mock("../../utils/logging.js", () => ({
+const mockLogging = vi.hoisted(() => ({
   logInfo: vi.fn(),
   logWarn: vi.fn(),
   logError: vi.fn(),
 }));
-
-import * as dbUtils from "../../utils/db.js";
-import * as logging from "../../utils/logging.js";
+vi.mock("../../utils/logging.js", () => mockLogging);
 
 const mockExistsSync = vi.mocked(existsSync);
 const mockMkdirSync = vi.mocked(mkdirSync);
 const mockJoin = vi.mocked(join);
-const mockInitializeDatabase = vi.mocked(dbUtils.initializeDatabase);
-const mockGetChatHistory = vi.mocked(dbUtils.getChatHistory);
-const mockSaveChatMessage = vi.mocked(dbUtils.saveChatMessage);
-const mockLogInfo = vi.mocked(logging.logInfo);
-const mockLogError = vi.mocked(logging.logError);
+const mockInitializeDatabase = mockDbUtils.initializeDatabase;
+const mockGetChatHistory = mockDbUtils.getChatHistory;
+const mockSaveChatMessage = mockDbUtils.saveChatMessage;
+const mockLogInfo = mockLogging.logInfo;
+const mockLogError = mockLogging.logError;
 
 describe("DatabaseManager", () => {
   let databaseManager: DatabaseManager;

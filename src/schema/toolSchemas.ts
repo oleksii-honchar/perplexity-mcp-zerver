@@ -61,7 +61,7 @@ export const TOOL_SCHEMAS = [
   {
     name: "extract_url_content",
     description:
-      "Uses browser automation (Puppeteer) and Mozilla's Readability library to extract the main article text content from a given URL. Handles dynamic JavaScript rendering and includes fallback logic. For GitHub repository URLs, it attempts to fetch structured content via gitingest.com. Performs a pre-check for non-HTML content types and checks HTTP status after navigation. Ideal for getting clean text from articles/blog posts. **Note: May struggle to isolate only core content on complex homepages or dashboards, potentially including UI elements.**",
+      "Extracts main article text content from a given URL using Mozilla's Readability library. Handles basic HTML parsing and includes fallback logic. For GitHub repository URLs, it attempts to fetch structured content via gitingest.com. Performs a pre-check for non-HTML content types and checks HTTP status after fetching. Ideal for getting clean text from articles/blog posts.",
     category: "Information Extraction",
     keywords: [
       "extract",
@@ -75,7 +75,6 @@ export const TOOL_SCHEMAS = [
       "readability",
       "article",
       "dom",
-      "puppeteer",
       "github",
       "gitingest",
       "repository",

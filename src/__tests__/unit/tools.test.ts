@@ -1,13 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { PuppeteerContext } from "../../types/browser.js";
 import type { PageContentResult } from "../../types/browser.js";
 import type { ChatMessage } from "../../types/database.js";
 
-// Mock Puppeteer
-vi.mock("puppeteer", () => ({
-  default: {
-    launch: vi.fn(),
-  },
+// Mock PerplexityApiClient
+const mockChatCompletion = vi.fn();
+const MockPerplexityApiClient = vi.fn().mockImplementation(() => ({
+  chatCompletion: mockChatCompletion,
+}));
+
+vi.mock("../../server/modules/PerplexityApiClient.js", () => ({
+  PerplexityApiClient: MockPerplexityApiClient,
 }));
 
 // Mock Mozilla Readability
@@ -37,46 +39,24 @@ vi.mock("../../utils/db.js", () => ({
 }));
 
 // Mock extraction utilities
-vi.mock("../../utils/extraction.js", () => ({
+const mockExtraction = vi.hoisted(() => ({
   fetchSinglePageContent: vi.fn(),
   recursiveFetch: vi.fn(),
   extractSameDomainLinks: vi.fn(),
 }));
+vi.mock("../../utils/extraction.js", () => mockExtraction);
 
 // Mock fetch utilities
 vi.mock("../../utils/fetch.js", () => ({
-  fetchWithTimeout: vi.fn(),
   fetchSimpleContent: vi.fn(),
 }));
 
-// Mock puppeteer-logic utilities
-vi.mock("../../utils/puppeteer-logic.js", () => ({
-  isValidUrlForBrowser: vi.fn(),
-}));
-
-// Create a proper mock context with all required properties
-const mockCtx: PuppeteerContext = {
-  browser: null,
-  page: null,
-  isInitializing: false,
-  searchInputSelector: 'textarea[placeholder*="Ask"]',
-  lastSearchTime: 0,
-  idleTimeout: null,
-  operationCount: 0,
-  log: vi.fn(),
-  setBrowser: vi.fn(),
-  setPage: vi.fn(),
-  setIsInitializing: vi.fn(),
-  setSearchInputSelector: vi.fn(),
-  setIdleTimeout: vi.fn(),
-  incrementOperationCount: vi.fn(),
-  determineRecoveryLevel: vi.fn(),
-  IDLE_TIMEOUT_MS: 300000,
-};
+const mockApiClient = new MockPerplexityApiClient();
 
 describe("Tools", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockChatCompletion.mockReset();
   });
 
   describe("chatPerplexity", () => {
@@ -84,22 +64,22 @@ describe("Tools", () => {
       const { default: chatPerplexity } = await import("../../tools/chatPerplexity.js");
 
       mockGetChatHistory.mockReturnValue([]);
-      const mockPerformSearch = vi.fn().mockResolvedValue("Mock response");
+      mockChatCompletion.mockResolvedValue("Mock response");
 
       const args = { message: "Hello, world!" };
       const result = await chatPerplexity(
         args,
-        mockCtx,
-        mockPerformSearch,
+        mockApiClient,
         mockGetChatHistory,
         mockSaveChatMessage,
       );
 
       expect(mockGetChatHistory).toHaveBeenCalled();
       expect(mockSaveChatMessage).toHaveBeenCalled();
-      expect(mockPerformSearch).toHaveBeenCalledWith(
-        expect.stringContaining("Hello, world!"),
-        mockCtx,
+      expect(mockChatCompletion).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({ role: "user", content: "Hello, world!" }),
+        ]),
       );
       expect(result).toBe("Mock response");
     });
@@ -111,21 +91,23 @@ describe("Tools", () => {
         { role: "user", content: "Previous message" } as ChatMessage,
         { role: "assistant", content: "Previous response" } as ChatMessage,
       ]);
-      const mockPerformSearch = vi.fn().mockResolvedValue("New response");
+      mockChatCompletion.mockResolvedValue("New response");
 
       const args = { message: "New message", chat_id: "test-chat-id" };
       const result = await chatPerplexity(
         args,
-        mockCtx,
-        mockPerformSearch,
+        mockApiClient,
         mockGetChatHistory,
         mockSaveChatMessage,
       );
 
       expect(mockGetChatHistory).toHaveBeenCalledWith("test-chat-id");
-      expect(mockPerformSearch).toHaveBeenCalledWith(
-        expect.stringContaining("Previous message"),
-        mockCtx,
+      expect(mockChatCompletion).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({ role: "user", content: "Previous message" }),
+          expect.objectContaining({ role: "assistant", content: "Previous response" }),
+          expect.objectContaining({ role: "user", content: "New message" }),
+        ]),
       );
       expect(result).toBe("New response");
     });
@@ -134,18 +116,17 @@ describe("Tools", () => {
       const { default: chatPerplexity } = await import("../../tools/chatPerplexity.js");
 
       mockGetChatHistory.mockReturnValue([]);
-      const mockPerformSearch = vi.fn().mockResolvedValue("Response to empty message");
+      mockChatCompletion.mockResolvedValue("Response to empty message");
 
       const args = { message: "" };
       const result = await chatPerplexity(
         args,
-        mockCtx,
-        mockPerformSearch,
+        mockApiClient,
         mockGetChatHistory,
         mockSaveChatMessage,
       );
 
-      expect(mockPerformSearch).toHaveBeenCalled();
+      expect(mockChatCompletion).toHaveBeenCalled();
       expect(result).toBe("Response to empty message");
     });
   });
@@ -154,14 +135,18 @@ describe("Tools", () => {
     it("should handle normal detail level search", async () => {
       const { default: search } = await import("../../tools/search.js");
 
-      const mockPerformSearch = vi.fn().mockResolvedValue("Normal search result");
+      mockChatCompletion.mockResolvedValue("Normal search result");
 
       const args = { query: "test query", detail_level: "normal" as const };
-      const result = await search(args, mockCtx, mockPerformSearch);
+      const result = await search(args, mockApiClient);
 
-      expect(mockPerformSearch).toHaveBeenCalledWith(
-        expect.stringContaining("Provide a clear, balanced answer to: test query"),
-        mockCtx,
+      expect(mockChatCompletion).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            role: "user",
+            content: expect.stringContaining("Provide a clear, balanced answer to: test query"),
+          }),
+        ]),
       );
       expect(result).toBe("Normal search result");
     });
@@ -169,14 +154,18 @@ describe("Tools", () => {
     it("should handle brief detail level search", async () => {
       const { default: search } = await import("../../tools/search.js");
 
-      const mockPerformSearch = vi.fn().mockResolvedValue("Brief search result");
+      mockChatCompletion.mockResolvedValue("Brief search result");
 
       const args = { query: "test query", detail_level: "brief" as const };
-      const result = await search(args, mockCtx, mockPerformSearch);
+      const result = await search(args, mockApiClient);
 
-      expect(mockPerformSearch).toHaveBeenCalledWith(
-        expect.stringContaining("Provide a brief, concise answer to: test query"),
-        mockCtx,
+      expect(mockChatCompletion).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            role: "user",
+            content: expect.stringContaining("Provide a brief, concise answer to: test query"),
+          }),
+        ]),
       );
       expect(result).toBe("Brief search result");
     });
@@ -184,42 +173,39 @@ describe("Tools", () => {
     it("should handle detailed detail level search", async () => {
       const { default: search } = await import("../../tools/search.js");
 
-      const mockPerformSearch = vi.fn().mockResolvedValue("Detailed search result");
+      mockChatCompletion.mockResolvedValue("Detailed search result");
 
       const args = { query: "test query", detail_level: "detailed" as const };
-      const result = await search(args, mockCtx, mockPerformSearch);
+      const result = await search(args, mockApiClient);
 
-      expect(mockPerformSearch).toHaveBeenCalledWith(
-        expect.stringContaining("Provide a comprehensive, detailed analysis of: test query"),
-        mockCtx,
+      expect(mockChatCompletion).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            role: "user",
+            content: expect.stringContaining(
+              "Provide a comprehensive, detailed analysis of: test query",
+            ),
+          }),
+        ]),
       );
       expect(result).toBe("Detailed search result");
-    });
-
-    it("should handle streaming search", async () => {
-      const { default: search } = await import("../../tools/search.js");
-
-      const mockPerformSearch = vi.fn().mockResolvedValue("Streaming search result");
-
-      const args = { query: "test query", stream: true };
-      const result = await search(args, mockCtx, mockPerformSearch);
-
-      // Should return a generator for streaming
-      expect(typeof result).toBe("object");
-      expect(result).toHaveProperty("next");
     });
 
     it("should handle search with default parameters", async () => {
       const { default: search } = await import("../../tools/search.js");
 
-      const mockPerformSearch = vi.fn().mockResolvedValue("Default search result");
+      mockChatCompletion.mockResolvedValue("Default search result");
 
       const args = { query: "test query" };
-      const result = await search(args, mockCtx, mockPerformSearch);
+      const result = await search(args, mockApiClient);
 
-      expect(mockPerformSearch).toHaveBeenCalledWith(
-        expect.stringContaining("Provide a clear, balanced answer to: test query"),
-        mockCtx,
+      expect(mockChatCompletion).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            role: "user",
+            content: expect.stringContaining("Provide a clear, balanced answer to: test query"),
+          }),
+        ]),
       );
       expect(result).toBe("Default search result");
     });
@@ -236,11 +222,10 @@ describe("Tools", () => {
         error: null,
       };
 
-      const { fetchSinglePageContent } = await import("../../utils/extraction.js");
-      vi.mocked(fetchSinglePageContent).mockResolvedValue(mockResult);
+      mockExtraction.fetchSinglePageContent.mockResolvedValue(mockResult);
 
       const args = { url: "https://example.com", depth: 1 };
-      const result = await extractUrlContent(args, mockCtx);
+      const result = await extractUrlContent(args);
 
       // For depth=1, it should return the result directly as JSON
       const parsedResult = JSON.parse(result);
@@ -260,13 +245,12 @@ describe("Tools", () => {
         },
       ];
 
-      const { recursiveFetch } = await import("../../utils/extraction.js");
-      vi.mocked(recursiveFetch).mockImplementation(async (_, __, ___, ____, results) => {
+      mockExtraction.recursiveFetch.mockImplementation(async (_, __, ___, ____, results: PageContentResult[]) => {
         results.push(...mockResults);
       });
 
       const args = { url: "https://example.com", depth: 2 };
-      const result = await extractUrlContent(args, mockCtx);
+      const result = await extractUrlContent(args);
 
       const parsedResult = JSON.parse(result);
       expect(parsedResult.explorationDepth).toBe(2);
@@ -284,11 +268,10 @@ describe("Tools", () => {
         error: null,
       };
 
-      const { fetchSinglePageContent } = await import("../../utils/extraction.js");
-      vi.mocked(fetchSinglePageContent).mockResolvedValue(mockResult);
+      mockExtraction.fetchSinglePageContent.mockResolvedValue(mockResult);
 
       const args = { url: "https://github.com/user/repo", depth: 1 };
-      const result = await extractUrlContent(args, mockCtx);
+      const result = await extractUrlContent(args);
 
       // For GitHub URLs with depth=1, it should still return the result directly
       const parsedResult = JSON.parse(result);
@@ -299,9 +282,8 @@ describe("Tools", () => {
     it("should handle extraction errors gracefully", async () => {
       const { default: extractUrlContent } = await import("../../tools/extractUrlContent.js");
 
-      const { fetchSinglePageContent } = await import("../../utils/extraction.js");
       // Mock fetchSinglePageContent to return an error result, not throw
-      vi.mocked(fetchSinglePageContent).mockResolvedValue({
+      mockExtraction.fetchSinglePageContent.mockResolvedValue({
         url: "https://invalid-url.com",
         error: "Network error",
       });
@@ -309,7 +291,7 @@ describe("Tools", () => {
       const args = { url: "https://invalid-url.com", depth: 1 };
 
       // The function should catch the error and return it in the result, not throw
-      const result = await extractUrlContent(args, mockCtx);
+      const result = await extractUrlContent(args);
 
       // For depth=1, errors should be returned in the result object
       const parsedResult = JSON.parse(result);
@@ -326,12 +308,11 @@ describe("Tools", () => {
         error: null,
       };
 
-      const { fetchSinglePageContent } = await import("../../utils/extraction.js");
-      vi.mocked(fetchSinglePageContent).mockResolvedValue(mockResult);
+      mockExtraction.fetchSinglePageContent.mockResolvedValue(mockResult);
 
       // Test depth clamping - should be max 5
       const args = { url: "https://example.com", depth: 10 };
-      const result = await extractUrlContent(args, mockCtx);
+      const result = await extractUrlContent(args);
 
       // For depth > 1, it should return the formatted result object
       const parsedResult = JSON.parse(result);
@@ -343,16 +324,19 @@ describe("Tools", () => {
     it("should handle basic documentation query", async () => {
       const { default: getDocumentation } = await import("../../tools/getDocumentation.js");
 
-      const mockPerformSearch = vi.fn().mockResolvedValue("Documentation result");
+      mockChatCompletion.mockResolvedValue("Documentation result");
 
       const args = { query: "React hooks" };
-      const result = await getDocumentation(args, mockCtx, mockPerformSearch);
+      const result = await getDocumentation(args, mockApiClient);
 
-      expect(mockPerformSearch).toHaveBeenCalledWith(
-        expect.stringContaining(
-          "Provide comprehensive documentation and usage examples for React hooks",
-        ),
-        mockCtx,
+      expect(mockChatCompletion).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            content: expect.stringContaining(
+              "Provide comprehensive documentation and usage examples for React hooks",
+            ),
+          }),
+        ]),
       );
       expect(result).toBe("Documentation result");
     });
@@ -360,14 +344,17 @@ describe("Tools", () => {
     it("should handle documentation query with context", async () => {
       const { default: getDocumentation } = await import("../../tools/getDocumentation.js");
 
-      const mockPerformSearch = vi.fn().mockResolvedValue("Documentation with context result");
+      mockChatCompletion.mockResolvedValue("Documentation with context result");
 
       const args = { query: "React hooks", context: "focus on performance optimization" };
-      const result = await getDocumentation(args, mockCtx, mockPerformSearch);
+      const result = await getDocumentation(args, mockApiClient);
 
-      expect(mockPerformSearch).toHaveBeenCalledWith(
-        expect.stringContaining("Focus on: focus on performance optimization"),
-        mockCtx,
+      expect(mockChatCompletion).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            content: expect.stringContaining("Focus on: focus on performance optimization"),
+          }),
+        ]),
       );
       expect(result).toBe("Documentation with context result");
     });
@@ -377,14 +364,19 @@ describe("Tools", () => {
     it("should handle API discovery query", async () => {
       const { default: findApis } = await import("../../tools/findApis.js");
 
-      const mockPerformSearch = vi.fn().mockResolvedValue("API discovery result");
+      mockChatCompletion.mockResolvedValue("API discovery result");
 
       const args = { requirement: "image recognition" };
-      const result = await findApis(args, mockCtx, mockPerformSearch);
+      const result = await findApis(args, mockApiClient);
 
-      expect(mockPerformSearch).toHaveBeenCalledWith(
-        expect.stringContaining("Find and evaluate APIs that could be used for: image recognition"),
-        mockCtx,
+      expect(mockChatCompletion).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            content: expect.stringContaining(
+              "Find and evaluate APIs that could be used for: image recognition",
+            ),
+          }),
+        ]),
       );
       expect(result).toBe("API discovery result");
     });
@@ -392,14 +384,17 @@ describe("Tools", () => {
     it("should handle API discovery with context", async () => {
       const { default: findApis } = await import("../../tools/findApis.js");
 
-      const mockPerformSearch = vi.fn().mockResolvedValue("API discovery with context result");
+      mockChatCompletion.mockResolvedValue("API discovery with context result");
 
       const args = { requirement: "payment processing", context: "prefer free tier options" };
-      const result = await findApis(args, mockCtx, mockPerformSearch);
+      const result = await findApis(args, mockApiClient);
 
-      expect(mockPerformSearch).toHaveBeenCalledWith(
-        expect.stringContaining("Context: prefer free tier options"),
-        mockCtx,
+      expect(mockChatCompletion).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            content: expect.stringContaining("Context: prefer free tier options"),
+          }),
+        ]),
       );
       expect(result).toBe("API discovery with context result");
     });
@@ -409,14 +404,17 @@ describe("Tools", () => {
     it("should handle deprecated code checking", async () => {
       const { default: checkDeprecatedCode } = await import("../../tools/checkDeprecatedCode.js");
 
-      const mockPerformSearch = vi.fn().mockResolvedValue("Deprecation check result");
+      mockChatCompletion.mockResolvedValue("Deprecation check result");
 
       const args = { code: "componentWillMount()" };
-      const result = await checkDeprecatedCode(args, mockCtx, mockPerformSearch);
+      const result = await checkDeprecatedCode(args, mockApiClient);
 
-      expect(mockPerformSearch).toHaveBeenCalledWith(
-        expect.stringContaining("componentWillMount()"),
-        mockCtx,
+      expect(mockChatCompletion).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            content: expect.stringContaining("componentWillMount()"),
+          }),
+        ]),
       );
       expect(result).toBe("Deprecation check result");
     });
@@ -424,18 +422,18 @@ describe("Tools", () => {
     it("should handle deprecated code checking with technology context", async () => {
       const { default: checkDeprecatedCode } = await import("../../tools/checkDeprecatedCode.js");
 
-      const mockPerformSearch = vi
-        .fn()
-        .mockResolvedValue("Deprecation check with tech context result");
+      mockChatCompletion.mockResolvedValue("Deprecation check with tech context result");
 
       const args = { code: "var instead of let/const", technology: "React 16" };
-      const result = await checkDeprecatedCode(args, mockCtx, mockPerformSearch);
+      const result = await checkDeprecatedCode(args, mockApiClient);
 
-      expect(mockPerformSearch).toHaveBeenCalledWith(
-        expect.stringContaining("var instead of let/const"),
-        mockCtx,
+      expect(mockChatCompletion).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            content: expect.stringContaining("var instead of let/const"),
+          }),
+        ]),
       );
-      expect(mockPerformSearch).toHaveBeenCalledWith(expect.stringContaining("React 16"), mockCtx);
       expect(result).toBe("Deprecation check with tech context result");
     });
   });

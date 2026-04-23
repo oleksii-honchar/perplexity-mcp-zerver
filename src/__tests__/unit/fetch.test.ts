@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import type { PuppeteerContext } from "../../types/index.js";
 
 // Mock external dependencies
 const mockAxiosGet = vi.fn();
@@ -42,26 +41,6 @@ vi.mock("jsdom", () => {
 });
 
 describe("Fetch Utilities", () => {
-  // Create a mock PuppeteerContext
-  const createMockContext = (): PuppeteerContext => ({
-    browser: null,
-    page: null,
-    isInitializing: false,
-    searchInputSelector: "",
-    lastSearchTime: 0,
-    idleTimeout: null,
-    operationCount: 0,
-    log: vi.fn(),
-    setBrowser: vi.fn(),
-    setPage: vi.fn(),
-    setIsInitializing: vi.fn(),
-    setSearchInputSelector: vi.fn(),
-    setIdleTimeout: vi.fn(),
-    incrementOperationCount: vi.fn(),
-    determineRecoveryLevel: vi.fn(),
-    IDLE_TIMEOUT_MS: 300000,
-  });
-
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -101,7 +80,7 @@ describe("Fetch Utilities", () => {
           "This is test content with enough characters to pass validation requirements for meaningful content extraction.",
       });
 
-      const result = await fetchSimpleContent("https://example.com", createMockContext());
+      const result = await fetchSimpleContent("https://example.com");
 
       expect(result.title).toBe("Test Page");
       expect(result.textContent).toBe(
@@ -112,9 +91,6 @@ describe("Fetch Utilities", () => {
         "https://example.com",
         expect.objectContaining({
           timeout: 8000,
-          headers: expect.objectContaining({
-            "User-Agent": "test-agent",
-          }),
         }),
       );
     });
@@ -146,7 +122,7 @@ describe("Fetch Utilities", () => {
         },
       }));
 
-      const result = await fetchSimpleContent("https://example.com/text", createMockContext());
+      const result = await fetchSimpleContent("https://example.com/text");
 
       expect(result.title).toBeNull();
       expect(result.textContent).toBe(
@@ -188,7 +164,7 @@ describe("Fetch Utilities", () => {
           "This is a long article content that is meaningful and has enough characters to pass validation requirements.",
       });
 
-      const result = await fetchSimpleContent("https://example.com/article", createMockContext());
+      const result = await fetchSimpleContent("https://example.com/article");
 
       expect(result.title).toBe("Parsed Article Title");
       expect(result.textContent).toBe(
@@ -212,7 +188,7 @@ describe("Fetch Utilities", () => {
       };
       mockAxiosGet.mockResolvedValue(mockResponse);
 
-      const result = await fetchSimpleContent("https://example.com/api", createMockContext());
+      const result = await fetchSimpleContent("https://example.com/api");
 
       expect(result.title).toBeNull();
       expect(result.textContent).toBeNull();
@@ -248,7 +224,7 @@ describe("Fetch Utilities", () => {
 
       mockReadabilityParse.mockReturnValue(null);
 
-      const result = await fetchSimpleContent("https://example.com/page", createMockContext());
+      const result = await fetchSimpleContent("https://example.com/page");
 
       expect(result.error).toBeUndefined();
       expect(result.textContent).toBe(
@@ -283,7 +259,7 @@ describe("Fetch Utilities", () => {
         },
       }));
 
-      const result = await fetchSimpleContent("https://example.com/text", createMockContext());
+      const result = await fetchSimpleContent("https://example.com/text");
 
       expect(result.error).toBeUndefined();
       expect(result.textContent).toBe(
@@ -324,7 +300,7 @@ describe("Fetch Utilities", () => {
 
       mockReadabilityParse.mockReturnValue(null);
 
-      const result = await fetchSimpleContent("https://example.com/long", createMockContext());
+      const result = await fetchSimpleContent("https://example.com/long");
 
       expect(result.error).toBeUndefined();
       expect(result.textContent).toContain("... (content truncated)");
@@ -359,7 +335,7 @@ describe("Fetch Utilities", () => {
 
       mockReadabilityParse.mockReturnValue(null);
 
-      const result = await fetchSimpleContent("https://example.com/short", createMockContext());
+      const result = await fetchSimpleContent("https://example.com/short");
 
       expect(result.title).toBeNull();
       expect(result.textContent).toBeNull();
@@ -377,7 +353,7 @@ describe("Fetch Utilities", () => {
       timeoutError.code = "ECONNABORTED";
       mockAxiosGet.mockRejectedValue(timeoutError);
 
-      const result = await fetchSimpleContent("https://example.com/timeout", createMockContext());
+      const result = await fetchSimpleContent("https://example.com/timeout");
 
       expect(result.title).toBeNull();
       expect(result.textContent).toBeNull();
@@ -395,7 +371,6 @@ describe("Fetch Utilities", () => {
 
       const result = await fetchSimpleContent(
         "https://invalid-domain-12345.com",
-        createMockContext(),
       );
 
       expect(result.title).toBeNull();
@@ -415,7 +390,7 @@ describe("Fetch Utilities", () => {
       };
       mockAxiosGet.mockRejectedValue(clientError);
 
-      const result = await fetchSimpleContent("https://example.com/notfound", createMockContext());
+      const result = await fetchSimpleContent("https://example.com/notfound");
 
       expect(result.title).toBeNull();
       expect(result.textContent).toBeNull();
@@ -434,7 +409,7 @@ describe("Fetch Utilities", () => {
       };
       mockAxiosGet.mockRejectedValue(serverError);
 
-      const result = await fetchSimpleContent("https://example.com/error", createMockContext());
+      const result = await fetchSimpleContent("https://example.com/error");
 
       expect(result.title).toBeNull();
       expect(result.textContent).toBeNull();
@@ -454,7 +429,7 @@ describe("Fetch Utilities", () => {
       };
       mockAxiosGet.mockResolvedValue(mockResponse);
 
-      const result = await fetchSimpleContent("https://example.com/invalid", createMockContext());
+      const result = await fetchSimpleContent("https://example.com/invalid");
 
       expect(result.title).toBeNull();
       expect(result.textContent).toBeNull();
@@ -494,7 +469,6 @@ describe("Fetch Utilities", () => {
 
       const result = await fetchSimpleContent(
         "https://example.com/readability-fail",
-        createMockContext(),
       );
 
       // Should fall back to body text extraction
@@ -535,7 +509,7 @@ describe("Fetch Utilities", () => {
 
       mockReadabilityParse.mockReturnValue(null);
 
-      const result = await fetchSimpleContent("https://example.com/empty", createMockContext());
+      const result = await fetchSimpleContent("https://example.com/empty");
 
       expect(result.title).toBeNull();
       expect(result.textContent).toBeNull();
@@ -570,7 +544,7 @@ describe("Fetch Utilities", () => {
 
       mockReadabilityParse.mockReturnValue(null);
 
-      const result = await fetchSimpleContent("https://example.com/malformed", createMockContext());
+      const result = await fetchSimpleContent("https://example.com/malformed");
 
       expect(result.error).toBeUndefined();
       expect(result.textContent).toBe(

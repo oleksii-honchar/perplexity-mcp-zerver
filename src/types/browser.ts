@@ -1,5 +1,5 @@
 /**
- * Content extraction type definitions
+ * Browser and content extraction related type definitions
  */
 
 // ─── CONTENT EXTRACTION TYPES ─────────────────────────────────────────

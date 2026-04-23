@@ -1,11 +1,11 @@
 /**
- * Tool implementation for finding APIs via Perplexity API
+ * Tool implementation for finding APIs
  */
 
 import type { PerplexityApiClient } from "../server/modules/PerplexityApiClient.js";
 
 /**
- * Handles API discovery and comparison via Perplexity API
+ * Handles API discovery and comparison
  */
 export default async function findApis(
   args: { requirement: string; context?: string },
@@ -26,13 +26,5 @@ export default async function findApis(
 9. Code examples for basic usage
 10. Comparison with similar APIs
 11. SDK availability and language support`;
-
-  return apiClient.chatCompletion([
-    {
-      role: "system",
-      content:
-        "You are an API discovery assistant. Help find, compare, and evaluate APIs with details on pricing, authentication, SDKs, and code examples.",
-    },
-    { role: "user", content: prompt },
-  ]);
+  return await apiClient.chatCompletion([{ role: "user", content: prompt }]);
 }

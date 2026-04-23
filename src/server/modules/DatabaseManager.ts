@@ -1,28 +1,26 @@
 import { existsSync, mkdirSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { dirname } from "node:path";
 /**
  * DatabaseManager - Handles all database operations
- * Focused, testable module for SQLite database management using better-sqlite3
+ * Focused, testable module for SQLite database management
  */
-import Database from "better-sqlite3";
+import SqliteDatabase from "better-sqlite3";
 import type { ChatMessage, IDatabaseManager } from "../../types/index.js";
 import { getChatHistory, initializeDatabase, saveChatMessage } from "../../utils/db.js";
 import { logError, logInfo } from "../../utils/logging.js";
+import { CONFIG } from "../config.js";
+
+type Database = InstanceType<typeof SqliteDatabase>;
 
 export class DatabaseManager implements IDatabaseManager {
-  private db: Database.Database | null = null;
+  private db: Database | null = null;
   private initialized = false;
 
   constructor(private readonly customDbPath?: string) {}
 
   initialize(): void {
     try {
-      // Determine database path
-      const dbPath =
-        this.customDbPath ||
-        join(dirname(fileURLToPath(import.meta.url)), "..", "..", "chat_history.db");
-
+      const dbPath = this.customDbPath || CONFIG.DATABASE_PATH;
       const dbDir = dirname(dbPath);
 
       logInfo(`Initializing database at: ${dbPath}`);
@@ -34,7 +32,7 @@ export class DatabaseManager implements IDatabaseManager {
       }
 
       // Initialize SQLite database
-      this.db = new Database(dbPath);
+      this.db = new SqliteDatabase(dbPath);
 
       // Run database initialization script
       initializeDatabase(this.db);
@@ -60,7 +58,7 @@ export class DatabaseManager implements IDatabaseManager {
     }
 
     try {
-      return getChatHistory(this.db as Database.Database, chatId);
+      return getChatHistory(this.db as Database, chatId);
     } catch (error) {
       logError("Failed to get chat history:", {
         error: error instanceof Error ? error.message : String(error),
@@ -77,7 +75,7 @@ export class DatabaseManager implements IDatabaseManager {
 
     try {
       const message: ChatMessage = { role, content };
-      saveChatMessage(this.db as Database.Database, chatId, message);
+      saveChatMessage(this.db as Database, chatId, message);
       logInfo(`Saved ${role} message for chat ${chatId}`);
     } catch (error) {
       logError("Failed to save chat message:", {
@@ -109,7 +107,7 @@ export class DatabaseManager implements IDatabaseManager {
   }
 
   // Getter for testing purposes
-  getDatabase(): Database.Database | null {
+  getDatabase(): Database | null {
     return this.db;
   }
 }

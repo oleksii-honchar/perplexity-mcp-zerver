@@ -2,19 +2,10 @@
  * Tool arguments and results type definitions
  */
 
-// ─── SEARCH ENGINE INTERFACE ──────────────────────────────────────────
-export interface ISearchEngine {
-  performSearch(query: string): Promise<string>;
-}
-
 // ─── TOOL HANDLER TYPES ───────────────────────────────────────────────
 export type ToolHandler = (args: Record<string, unknown>) => Promise<string>;
 
 export interface ToolHandlersRegistry {
-  test_tool?: ToolHandler;
-  existing_tool?: ToolHandler;
-  failing_tool?: ToolHandler;
-  timeout_tool?: ToolHandler;
   chat_perplexity?: ToolHandler;
   get_documentation?: ToolHandler;
   find_apis?: ToolHandler;

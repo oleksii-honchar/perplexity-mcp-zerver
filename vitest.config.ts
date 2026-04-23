@@ -5,6 +5,9 @@ export default defineConfig({
     globals: true,
     environment: "node",
     root: "./",
+    env: {
+      PERPLEXITY_API_KEY: "test-api-key-for-unit-tests",
+    },
     // Only include tests from src directory, not compiled build directory
     include: ["src/**/*.{test,spec}.{js,ts}"],
     exclude: [

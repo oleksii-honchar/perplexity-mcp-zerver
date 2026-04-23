@@ -1,36 +1,32 @@
 /**
- * PerplexityServer - Modular, testable architecture
- * Uses dependency injection and focused modules for better testability
+ * PerplexityServer - API-based MCP server
  */
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import type {
-  IBrowserManager,
-  IDatabaseManager,
-  ISearchEngine,
-  ServerDependencies,
-} from "../types/index.js";
+import type { IDatabaseManager, ServerDependencies } from "../types/index.js";
 import { logError, logInfo } from "../utils/logging.js";
-import { BrowserManager } from "./modules/BrowserManager.js";
 import { DatabaseManager } from "./modules/DatabaseManager.js";
-import { SearchEngine } from "./modules/SearchEngine.js";
+import { PerplexityApiClient } from "./modules/PerplexityApiClient.js";
 import { createToolHandlersRegistry, setupToolHandlers } from "./toolHandlerSetup.js";
 
 // Import modular tool implementations
 import chatPerplexity from "../tools/chatPerplexity.js";
+import checkDeprecatedCode from "../tools/checkDeprecatedCode.js";
 import extractUrlContent from "../tools/extractUrlContent.js";
+import findApis from "../tools/findApis.js";
+import getDocumentation from "../tools/getDocumentation.js";
+import search from "../tools/search.js";
 
 export class PerplexityServer {
   private readonly server: Server;
-  private readonly browserManager: IBrowserManager;
-  private readonly searchEngine: ISearchEngine;
+  private readonly apiClient: PerplexityApiClient;
   private readonly databaseManager: IDatabaseManager;
 
   constructor(dependencies?: ServerDependencies) {
     try {
       // Initialize MCP Server
       this.server = new Server(
-        { name: "perplexity-server", version: "0.2.0" },
+        { name: "perplexity-server", version: "0.4.0" },
         {
           capabilities: {
             tools: {
@@ -40,18 +36,17 @@ export class PerplexityServer {
         },
       );
 
-      // Initialize modules with dependency injection
-      this.databaseManager = dependencies?.databaseManager ?? new DatabaseManager();
-      this.browserManager = dependencies?.browserManager ?? new BrowserManager();
-      this.searchEngine = dependencies?.searchEngine ?? new SearchEngine(this.browserManager);
+      // Initialize API client
+      this.apiClient = dependencies?.apiClient ?? new PerplexityApiClient();
 
       // Initialize database
+      this.databaseManager = dependencies?.databaseManager ?? new DatabaseManager();
       this.databaseManager.initialize();
 
       // Setup tool handlers
       this.setupToolHandlers();
 
-      // Setup graceful shutdown (only if not in MCP mode and not in test mode)
+      // Setup graceful shutdown
       // biome-ignore lint/complexity/useLiteralKeys: Environment variable access
       if (!process.env["MCP_MODE"] && !process.env["VITEST"]) {
         this.setupShutdownHandler();
@@ -85,7 +80,6 @@ export class PerplexityServer {
 
   private async cleanup(): Promise<void> {
     try {
-      await this.browserManager.cleanup();
       this.databaseManager.close();
       logInfo("Server cleanup completed");
     } catch (error) {
@@ -95,52 +89,29 @@ export class PerplexityServer {
     }
   }
 
-  // Tool handler implementations
   private async handleChatPerplexity(args: Record<string, unknown>): Promise<string> {
     const typedArgs = args as { message: string; chat_id?: string };
 
-    // Use modular search engine
-    const searchResult = await this.searchEngine.performSearch(typedArgs.message);
-
-    // Use modular database manager
     const getChatHistoryFn = (chatId: string) => this.databaseManager.getChatHistory(chatId);
-    const saveChatMessageFn = (
-      chatId: string,
-      message: { role: "user" | "assistant"; content: string },
-    ) => this.databaseManager.saveChatMessage(chatId, message.role, message.content);
+    const saveChatMessageFn = (chatId: string, message: { role: "user" | "assistant"; content: string }) =>
+      this.databaseManager.saveChatMessage(chatId, message.role, message.content);
 
-    // Call the original tool implementation with injected dependencies
-    return await chatPerplexity(
-      typedArgs,
-      {} as never, // Context not needed with modular approach
-      () => Promise.resolve(searchResult),
-      getChatHistoryFn,
-      saveChatMessageFn,
-    );
+    return await chatPerplexity(typedArgs, this.apiClient, getChatHistoryFn, saveChatMessageFn);
   }
 
   private async handleGetDocumentation(args: Record<string, unknown>): Promise<string> {
     const typedArgs = args as { query: string; context?: string };
-    const searchResult = await this.searchEngine.performSearch(
-      `Documentation for ${typedArgs.query}: ${typedArgs.context || ""}`,
-    );
-    return searchResult;
+    return await getDocumentation(typedArgs, this.apiClient);
   }
 
   private async handleFindApis(args: Record<string, unknown>): Promise<string> {
     const typedArgs = args as { requirement: string; context?: string };
-    const searchResult = await this.searchEngine.performSearch(
-      `Find APIs for ${typedArgs.requirement}: ${typedArgs.context || ""}`,
-    );
-    return searchResult;
+    return await findApis(typedArgs, this.apiClient);
   }
 
   private async handleCheckDeprecatedCode(args: Record<string, unknown>): Promise<string> {
     const typedArgs = args as { code: string; technology?: string };
-    const searchResult = await this.searchEngine.performSearch(
-      `Check if this ${typedArgs.technology || "code"} is deprecated: ${typedArgs.code}`,
-    );
-    return searchResult;
+    return await checkDeprecatedCode(typedArgs, this.apiClient);
   }
 
   private async handleSearch(args: Record<string, unknown>): Promise<string> {
@@ -150,26 +121,12 @@ export class PerplexityServer {
       stream?: boolean;
     };
 
-    return await this.searchEngine.performSearch(typedArgs.query);
+    return await search(typedArgs, this.apiClient);
   }
 
   private async handleExtractUrlContent(args: Record<string, unknown>): Promise<string> {
     const typedArgs = args as { url: string; depth?: number };
-
-    // Ensure browser is initialized
-    if (!this.browserManager.isReady()) {
-      await this.browserManager.initialize();
-    }
-
-    // Create PuppeteerContext from BrowserManager
-    const ctx = this.createPuppeteerContext();
-
-    return await extractUrlContent(typedArgs, ctx);
-  }
-
-  private createPuppeteerContext() {
-    const browserManager = this.browserManager as any; // Access the getPuppeteerContext method
-    return browserManager.getPuppeteerContext();
+    return await extractUrlContent(typedArgs);
   }
 
   private setupToolHandlers(): void {
@@ -221,12 +178,8 @@ export class PerplexityServer {
   }
 
   // Getters for testing
-  public getBrowserManager(): IBrowserManager {
-    return this.browserManager;
-  }
-
-  public getSearchEngine(): ISearchEngine {
-    return this.searchEngine;
+  public getApiClient(): PerplexityApiClient {
+    return this.apiClient;
   }
 
   public getDatabaseManager(): IDatabaseManager {

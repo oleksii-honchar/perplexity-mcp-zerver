@@ -4,18 +4,16 @@ import { CONFIG } from "../../server/config.js";
 describe("Configuration", () => {
   describe("Timeout Values", () => {
     it("should have consistent timeout values", () => {
-      expect(CONFIG.PAGE_TIMEOUT).toBeGreaterThan(0);
-      expect(CONFIG.SELECTOR_TIMEOUT).toBeGreaterThan(0);
-      expect(CONFIG.ANSWER_WAIT_TIMEOUT).toBeGreaterThan(0);
+      expect(CONFIG.REQUEST_TIMEOUT).toBeGreaterThan(0);
       expect(CONFIG.MCP_TIMEOUT_BUFFER).toBeGreaterThan(0);
     });
 
     it("should have reasonable timeout relationships", () => {
-      // Page timeout should be greater than selector timeout
-      expect(CONFIG.PAGE_TIMEOUT).toBeGreaterThan(CONFIG.SELECTOR_TIMEOUT);
+      // Request timeout should be greater than MCP buffer
+      expect(CONFIG.REQUEST_TIMEOUT).toBeGreaterThan(CONFIG.MCP_TIMEOUT_BUFFER);
 
-      // Answer wait timeout should be substantial for content loading
-      expect(CONFIG.ANSWER_WAIT_TIMEOUT).toBeGreaterThan(30000);
+      // Request timeout should be substantial for API calls
+      expect(CONFIG.REQUEST_TIMEOUT).toBeGreaterThan(30000);
     });
   });
 
@@ -39,9 +37,7 @@ describe("Configuration", () => {
     it("should have valid timeout profiles", () => {
       expect(CONFIG.TIMEOUT_PROFILES).toBeDefined();
       expect(CONFIG.TIMEOUT_PROFILES.navigation).toBeGreaterThan(0);
-      expect(CONFIG.TIMEOUT_PROFILES.selector).toBeGreaterThan(0);
       expect(CONFIG.TIMEOUT_PROFILES.content).toBeGreaterThan(0);
-      expect(CONFIG.TIMEOUT_PROFILES.recovery).toBeGreaterThan(0);
     });
 
     it("should have consistent timeout profile relationships", () => {
@@ -56,8 +52,15 @@ describe("Configuration", () => {
   describe("Debug Configuration", () => {
     it("should have valid debug settings", () => {
       expect(typeof CONFIG.DEBUG.CAPTURE_SCREENSHOTS).toBe("boolean");
-      expect(typeof CONFIG.DEBUG.SCREENSHOT_ON_RECOVERY_SUCCESS).toBe("boolean");
       expect(CONFIG.DEBUG.MAX_SCREENSHOTS).toBeGreaterThan(0);
+    });
+  });
+
+  describe("API Configuration", () => {
+    it("should have valid API settings", () => {
+      expect(CONFIG.BASE_URL).toBe("https://api.perplexity.ai");
+      expect(typeof CONFIG.DEFAULT_MODEL).toBe("string");
+      expect(CONFIG.DEFAULT_MODEL.length).toBeGreaterThan(0);
     });
   });
 });

@@ -1,11 +1,11 @@
 /**
- * Tool implementation for web search functionality via Perplexity API
+ * Tool implementation for web search functionality
  */
 
 import type { PerplexityApiClient } from "../server/modules/PerplexityApiClient.js";
 
 /**
- * Handles web search with configurable detail levels via Perplexity API
+ * Handles web search with configurable detail levels
  */
 export default async function search(
   args: {
@@ -29,11 +29,5 @@ export default async function search(
       prompt = `Provide a clear, balanced answer to: ${query}. Include key points and relevant context.`;
   }
 
-  return apiClient.chatCompletion([
-    {
-      role: "system",
-      content: "You are a helpful research assistant with access to the web via Perplexity. Provide accurate, well-sourced answers with citations when available.",
-    },
-    { role: "user", content: prompt },
-  ]);
+  return await apiClient.chatCompletion([{ role: "user", content: prompt }]);
 }

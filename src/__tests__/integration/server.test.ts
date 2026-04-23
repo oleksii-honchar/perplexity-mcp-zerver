@@ -1,53 +1,31 @@
 import { describe, expect, it, vi } from "vitest";
 import { PerplexityServer } from "../../server/PerplexityServer.js";
-import type { IBrowserManager, IDatabaseManager, ISearchEngine } from "../../types/index.js";
+import type { IDatabaseManager } from "../../types/index.js";
+import type { PerplexityApiClient } from "../../server/modules/PerplexityApiClient.js";
 
-// Mock the modules to avoid actual browser initialization and database connections
-vi.mock("../../server/modules/BrowserManager.js", () => {
+// Mock PerplexityApiClient
+const mockChatCompletion = vi.hoisted(() => vi.fn());
+vi.mock("../../server/modules/PerplexityApiClient.js", () => {
   return {
-    BrowserManager: vi.fn().mockImplementation(() => ({
-      initialize: vi.fn().mockResolvedValue(undefined),
-      isReady: vi.fn().mockReturnValue(true),
-      cleanup: vi.fn().mockResolvedValue(undefined),
-      getPuppeteerContext: vi.fn().mockReturnValue({
-        browser: null,
-        page: null,
-        isInitializing: false,
-        searchInputSelector: 'textarea[placeholder*="Ask"]',
-        lastSearchTime: 0,
-        idleTimeout: null,
-        operationCount: 0,
-        log: vi.fn(),
-        setBrowser: vi.fn(),
-        setPage: vi.fn(),
-        setIsInitializing: vi.fn(),
-        setSearchInputSelector: vi.fn(),
-        setIdleTimeout: vi.fn(),
-        incrementOperationCount: vi.fn(),
-        determineRecoveryLevel: vi.fn(),
-        IDLE_TIMEOUT_MS: 300000,
-      }),
+    PerplexityApiClient: vi.fn().mockImplementation(() => ({
+      chatCompletion: mockChatCompletion,
     })),
   };
 });
 
+// Mock DatabaseManager
+const MockDatabaseManager = vi.hoisted(() =>
+  vi.fn().mockImplementation(() => ({
+    initialize: vi.fn(),
+    close: vi.fn(),
+    getChatHistory: vi.fn().mockReturnValue([]),
+    saveChatMessage: vi.fn(),
+    isInitialized: vi.fn().mockReturnValue(true),
+  })),
+);
 vi.mock("../../server/modules/DatabaseManager.js", () => {
   return {
-    DatabaseManager: vi.fn().mockImplementation(() => ({
-      initialize: vi.fn(),
-      close: vi.fn(),
-      getChatHistory: vi.fn().mockReturnValue([]),
-      saveChatMessage: vi.fn(),
-      isInitialized: vi.fn().mockReturnValue(true),
-    })),
-  };
-});
-
-vi.mock("../../server/modules/SearchEngine.js", () => {
-  return {
-    SearchEngine: vi.fn().mockImplementation(() => ({
-      performSearch: vi.fn().mockResolvedValue("Mock search result"),
-    })),
+    DatabaseManager: MockDatabaseManager,
   };
 });
 
@@ -58,59 +36,71 @@ vi.mock("../../utils/logging.js", () => ({
   logError: vi.fn(),
 }));
 
+// Mock tool handlers setup
+vi.mock("../../server/toolHandlerSetup.js", () => ({
+  createToolHandlersRegistry: vi.fn().mockReturnValue({}),
+  setupToolHandlers: vi.fn(),
+}));
+
+// Mock the MCP SDK
+vi.mock("@modelcontextprotocol/sdk/server/index.js", () => ({
+  Server: vi.fn().mockImplementation(() => ({
+    connect: vi.fn().mockResolvedValue(undefined),
+    close: vi.fn().mockResolvedValue(undefined),
+    setRequestHandler: vi.fn(),
+  })),
+}));
+
+vi.mock("@modelcontextprotocol/sdk/server/stdio.js", () => ({
+  StdioServerTransport: vi.fn().mockImplementation(() => ({})),
+}));
+
+// Helper to create mock dependencies
+function createMockDependencies(): {
+  apiClient: PerplexityApiClient;
+  databaseManager: IDatabaseManager;
+} {
+  return {
+    apiClient: {
+      chatCompletion: mockChatCompletion,
+    } as unknown as PerplexityApiClient,
+    databaseManager: {
+      initialize: vi.fn(),
+      close: vi.fn(),
+      getChatHistory: vi.fn().mockReturnValue([]),
+      saveChatMessage: vi.fn(),
+      isInitialized: vi.fn().mockReturnValue(true),
+    },
+  };
+}
+
 describe("MCP Server Integration", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockChatCompletion.mockReset();
+  });
+
   describe("Server initialization", () => {
     it("should initialize server components successfully", () => {
-      const server = new PerplexityServer();
+      const deps = createMockDependencies();
+      const server = new PerplexityServer(deps);
 
       expect(server).toBeDefined();
-      expect(server.getBrowserManager()).toBeDefined();
-      expect(server.getSearchEngine()).toBeDefined();
+      expect(server.getApiClient()).toBeDefined();
       expect(server.getDatabaseManager()).toBeDefined();
     });
 
     it("should initialize server with custom dependencies", () => {
-      // Mock dependencies
-      const mockBrowserManager: IBrowserManager = {
-        initialize: vi.fn().mockResolvedValue(undefined),
-        navigateToPerplexity: vi.fn().mockResolvedValue(undefined),
-        waitForSearchInput: vi.fn().mockResolvedValue("textarea"),
-        checkForCaptcha: vi.fn().mockResolvedValue(false),
-        performRecovery: vi.fn().mockResolvedValue(undefined),
-        isReady: vi.fn().mockReturnValue(true),
-        cleanup: vi.fn().mockResolvedValue(undefined),
-        getPage: vi.fn().mockReturnValue(null),
-        getBrowser: vi.fn().mockReturnValue(null),
-        resetIdleTimeout: vi.fn(),
-        getPuppeteerContext: vi.fn().mockReturnValue({}),
-      };
-
-      const mockSearchEngine: ISearchEngine = {
-        performSearch: vi.fn().mockResolvedValue("Custom search result"),
-      };
-
-      const mockDatabaseManager: IDatabaseManager = {
-        initialize: vi.fn(),
-        close: vi.fn(),
-        getChatHistory: vi.fn().mockReturnValue([]),
-        saveChatMessage: vi.fn(),
-        isInitialized: vi.fn().mockReturnValue(true),
-      };
-
-      const dependencies = {
-        browserManager: mockBrowserManager,
-        searchEngine: mockSearchEngine,
-        databaseManager: mockDatabaseManager,
-      };
-
-      const server = new PerplexityServer(dependencies);
+      const deps = createMockDependencies();
+      const server = new PerplexityServer(deps);
 
       expect(server).toBeDefined();
-      expect(mockDatabaseManager.initialize).toHaveBeenCalled();
+      expect(deps.databaseManager.initialize).toHaveBeenCalled();
     });
 
     it("should initialize database during server startup", () => {
-      const server = new PerplexityServer();
+      const deps = createMockDependencies();
+      const server = new PerplexityServer(deps);
       const databaseManager = server.getDatabaseManager();
 
       // Since we mocked the DatabaseManager, we can check if initialize was called
@@ -120,7 +110,8 @@ describe("MCP Server Integration", () => {
 
   describe("Tool registration", () => {
     it("should register all required tools", () => {
-      const server = new PerplexityServer();
+      const deps = createMockDependencies();
+      const server = new PerplexityServer(deps);
 
       // We can't directly access the tool handlers, but we can verify the server was created
       expect(server).toBeDefined();
@@ -139,7 +130,8 @@ describe("MCP Server Integration", () => {
     });
 
     it("should verify all 6 tools are properly registered", () => {
-      const server = new PerplexityServer();
+      const deps = createMockDependencies();
+      const server = new PerplexityServer(deps);
 
       // Verify the server was created successfully
       expect(server).toBeDefined();
@@ -162,7 +154,8 @@ describe("MCP Server Integration", () => {
 
     it("should handle dynamic tool handler registration", () => {
       // Test that the server can be instantiated and tool handlers are set up
-      const server = new PerplexityServer();
+      const deps = createMockDependencies();
+      const server = new PerplexityServer(deps);
 
       expect(server).toBeDefined();
       // The setupToolHandlers method is called in the constructor
@@ -173,34 +166,39 @@ describe("MCP Server Integration", () => {
 
   describe("End-to-end workflows", () => {
     it("should handle basic search workflow", async () => {
-      const server = new PerplexityServer();
-      const searchEngine = server.getSearchEngine();
+      const deps = createMockDependencies();
+      const server = new PerplexityServer(deps);
+      const apiClient = server.getApiClient();
 
-      // Mock the search engine to return a specific result
-      vi.mocked(searchEngine.performSearch).mockResolvedValue("Test search result");
+      // Mock the API client to return a specific result
+      vi.mocked(apiClient.chatCompletion).mockResolvedValue("Test search result");
 
-      const result = await searchEngine.performSearch("test query");
+      const result = await apiClient.chatCompletion([
+        { role: "user", content: "test query" },
+      ]);
 
       expect(result).toBe("Test search result");
-      expect(searchEngine.performSearch).toHaveBeenCalledWith("test query");
     });
 
     it("should handle complete chat flow from request to response", async () => {
-      const server = new PerplexityServer();
-      const searchEngine = server.getSearchEngine();
+      const deps = createMockDependencies();
+      const server = new PerplexityServer(deps);
+      const apiClient = server.getApiClient();
 
-      // Mock the search engine to return a specific result
-      vi.mocked(searchEngine.performSearch).mockResolvedValue("Chat response");
+      // Mock the API client to return a specific result
+      vi.mocked(apiClient.chatCompletion).mockResolvedValue("Chat response");
 
-      const result = await searchEngine.performSearch("Hello, how are you?");
+      const result = await apiClient.chatCompletion([
+        { role: "user", content: "Hello, how are you?" },
+      ]);
 
       expect(result).toBe("Chat response");
-      expect(searchEngine.performSearch).toHaveBeenCalledWith("Hello, how are you?");
     });
 
     it("should handle complete search flow with different query types", async () => {
-      const server = new PerplexityServer();
-      const searchEngine = server.getSearchEngine();
+      const deps = createMockDependencies();
+      const server = new PerplexityServer(deps);
+      const apiClient = server.getApiClient();
 
       // Test different types of queries
       const queries = [
@@ -210,115 +208,111 @@ describe("MCP Server Integration", () => {
       ];
 
       for (const query of queries) {
-        vi.mocked(searchEngine.performSearch).mockResolvedValueOnce(`Result for: ${query}`);
-        const result = await searchEngine.performSearch(query);
+        vi.mocked(apiClient.chatCompletion).mockResolvedValueOnce(`Result for: ${query}`);
+        const result = await apiClient.chatCompletion([{ role: "user", content: query }]);
 
         expect(result).toBe(`Result for: ${query}`);
-        expect(searchEngine.performSearch).toHaveBeenCalledWith(query);
       }
     });
 
     it("should handle complete content extraction flow with various URLs", async () => {
-      const server = new PerplexityServer();
-      const browserManager = server.getBrowserManager();
+      const deps = createMockDependencies();
+      const server = new PerplexityServer(deps);
+      const databaseManager = server.getDatabaseManager();
 
-      // Verify that browser manager is properly initialized
-      expect(browserManager).toBeDefined();
-      expect(browserManager.isReady).toBeDefined();
+      // Verify that database manager is properly initialized
+      expect(databaseManager).toBeDefined();
+      expect(databaseManager.isInitialized).toBeDefined();
 
-      // Mock browser manager readiness
-      vi.mocked(browserManager.isReady).mockReturnValue(true);
+      // Mock database manager readiness
+      vi.mocked(databaseManager.isInitialized).mockReturnValue(true);
 
-      expect(browserManager.isReady()).toBe(true);
+      expect(databaseManager.isInitialized()).toBe(true);
     });
 
     it("should handle documentation lookup workflow", async () => {
-      const server = new PerplexityServer();
-      const searchEngine = server.getSearchEngine();
+      const deps = createMockDependencies();
+      const server = new PerplexityServer(deps);
+      const apiClient = server.getApiClient();
 
-      // Mock the search engine to return a documentation result
-      vi.mocked(searchEngine.performSearch).mockResolvedValue("Documentation for React hooks");
+      // Mock the API client to return a documentation result
+      vi.mocked(apiClient.chatCompletion).mockResolvedValue("Documentation for React hooks");
 
-      const result = await searchEngine.performSearch(
-        "Documentation for React hooks: focus on performance",
-      );
+      const result = await apiClient.chatCompletion([
+        { role: "user", content: "Documentation for React hooks: focus on performance" },
+      ]);
 
       expect(result).toBe("Documentation for React hooks");
-      expect(searchEngine.performSearch).toHaveBeenCalledWith(
-        "Documentation for React hooks: focus on performance",
-      );
     });
 
     it("should handle API discovery workflow", async () => {
-      const server = new PerplexityServer();
-      const searchEngine = server.getSearchEngine();
+      const deps = createMockDependencies();
+      const server = new PerplexityServer(deps);
+      const apiClient = server.getApiClient();
 
-      // Mock the search engine to return an API discovery result
-      vi.mocked(searchEngine.performSearch).mockResolvedValue("APIs for image recognition");
+      // Mock the API client to return an API discovery result
+      vi.mocked(apiClient.chatCompletion).mockResolvedValue("APIs for image recognition");
 
-      const result = await searchEngine.performSearch(
-        "Find APIs for image recognition: prefer free tier options",
-      );
+      const result = await apiClient.chatCompletion([
+        { role: "user", content: "Find APIs for image recognition: prefer free tier options" },
+      ]);
 
       expect(result).toBe("APIs for image recognition");
-      expect(searchEngine.performSearch).toHaveBeenCalledWith(
-        "Find APIs for image recognition: prefer free tier options",
-      );
     });
 
     it("should handle deprecated code checking workflow", async () => {
-      const server = new PerplexityServer();
-      const searchEngine = server.getSearchEngine();
+      const deps = createMockDependencies();
+      const server = new PerplexityServer(deps);
+      const apiClient = server.getApiClient();
 
-      // Mock the search engine to return a deprecation check result
-      vi.mocked(searchEngine.performSearch).mockResolvedValue("componentWillMount is deprecated");
+      // Mock the API client to return a deprecation check result
+      vi.mocked(apiClient.chatCompletion).mockResolvedValue("componentWillMount is deprecated");
 
-      const result = await searchEngine.performSearch(
-        "Check if this code is deprecated: componentWillMount()",
-      );
+      const result = await apiClient.chatCompletion([
+        { role: "user", content: "Check if this code is deprecated: componentWillMount()" },
+      ]);
 
       expect(result).toBe("componentWillMount is deprecated");
-      expect(searchEngine.performSearch).toHaveBeenCalledWith(
-        "Check if this code is deprecated: componentWillMount()",
-      );
     });
   });
 
   describe("Error scenario testing", () => {
     it("should handle timeout handling in integrated environment", async () => {
-      const server = new PerplexityServer();
-      const searchEngine = server.getSearchEngine();
+      const deps = createMockDependencies();
+      const server = new PerplexityServer(deps);
+      const apiClient = server.getApiClient();
 
-      // Mock search engine to simulate a timeout
-      vi.mocked(searchEngine.performSearch).mockRejectedValue(new Error("Search timeout"));
+      // Mock API client to simulate a timeout
+      vi.mocked(apiClient.chatCompletion).mockRejectedValue(new Error("API timeout"));
 
-      await expect(searchEngine.performSearch("slow query")).rejects.toThrow("Search timeout");
+      await expect(apiClient.chatCompletion([{ role: "user", content: "slow query" }])).rejects.toThrow("API timeout");
     });
 
     it("should handle malformed request handling", async () => {
-      const server = new PerplexityServer();
-      const searchEngine = server.getSearchEngine();
+      const deps = createMockDependencies();
+      const server = new PerplexityServer(deps);
+      const apiClient = server.getApiClient();
 
-      // Test with empty query
-      vi.mocked(searchEngine.performSearch).mockResolvedValue("Empty query response");
+      // Test with empty query - API should still handle it
+      vi.mocked(apiClient.chatCompletion).mockResolvedValue("Empty query response");
 
-      const result = await searchEngine.performSearch("");
+      const result = await apiClient.chatCompletion([{ role: "user", content: "" }]);
 
       expect(result).toBe("Empty query response");
-      expect(searchEngine.performSearch).toHaveBeenCalledWith("");
     });
 
-    it("should handle recovery procedures in integrated environment", async () => {
-      const server = new PerplexityServer();
-      const browserManager = server.getBrowserManager();
+    it("should handle cleanup procedures in integrated environment", async () => {
+      const deps = createMockDependencies();
+      const server = new PerplexityServer(deps);
+      const databaseManager = server.getDatabaseManager();
 
-      // Test that cleanup method exists and can be called
-      expect(browserManager.cleanup).toBeDefined();
+      // Test that close method exists and can be called
+      expect(databaseManager.close).toBeDefined();
 
-      // Mock cleanup to resolve successfully
-      vi.mocked(browserManager.cleanup).mockResolvedValue(undefined);
+      // Mock close to resolve successfully
+      vi.mocked(databaseManager.close).mockReturnValue(undefined);
 
-      await expect(browserManager.cleanup()).resolves.toBeUndefined();
+      expect(databaseManager.close()).toBeUndefined();
     });
   });
 });

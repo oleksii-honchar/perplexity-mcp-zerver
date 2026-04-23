@@ -1,13 +1,13 @@
 /**
- * Tool implementation for chat functionality with Perplexity API
+ * Tool implementation for chat functionality with Perplexity
  */
 
 import crypto from "node:crypto";
-import type { ChatMessage } from "../types/index.js";
 import type { PerplexityApiClient } from "../server/modules/PerplexityApiClient.js";
+import type { ChatMessage } from "../types/index.js";
 
 /**
- * Handles chat interactions with conversation history via Perplexity API
+ * Handles chat interactions with conversation history
  */
 export default async function chatPerplexity(
   args: { message: string; chat_id?: string },
@@ -20,21 +20,12 @@ export default async function chatPerplexity(
   const userMessage: ChatMessage = { role: "user", content: message };
   saveChatMessage(chat_id, userMessage);
 
-  const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
-    {
-      role: "system",
-      content:
-        "You are a helpful conversational assistant with access to the web via Perplexity. Maintain context from the conversation history and provide accurate, well-sourced answers.",
-    },
-  ];
+  const messages: { role: "system" | "user" | "assistant"; content: string }[] = [];
 
   for (const msg of history) {
     messages.push({ role: msg.role, content: msg.content });
   }
   messages.push({ role: "user", content: message });
 
-  const response = await apiClient.chatCompletion(messages);
-
-  saveChatMessage(chat_id, { role: "assistant", content: response });
-  return response;
+  return await apiClient.chatCompletion(messages);
 }
