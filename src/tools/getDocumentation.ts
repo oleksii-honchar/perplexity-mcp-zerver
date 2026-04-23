@@ -1,16 +1,15 @@
 /**
- * Tool implementation for documentation retrieval
+ * Tool implementation for documentation retrieval via Perplexity API
  */
 
-import type { PuppeteerContext } from "../types/index.js";
+import type { PerplexityApiClient } from "../server/modules/PerplexityApiClient.js";
 
 /**
- * Handles documentation fetching and formatting
+ * Handles documentation fetching and formatting via Perplexity API
  */
 export default async function getDocumentation(
   args: { query: string; context?: string },
-  ctx: PuppeteerContext,
-  performSearch: (prompt: string, ctx: PuppeteerContext) => Promise<string>,
+  apiClient: PerplexityApiClient,
 ): Promise<string> {
   const { query, context = "" } = args;
   const prompt = `Provide comprehensive documentation and usage examples for ${query}. ${
@@ -28,5 +27,13 @@ export default async function getDocumentation(
 10. Related tools/libraries that work well with it
 
 Crucially, also provide the main official URL(s) for this documentation on separate lines, prefixed with 'Official URL(s):'.`;
-  return await performSearch(prompt, ctx);
+
+  return apiClient.chatCompletion([
+    {
+      role: "system",
+      content:
+        "You are a technical documentation assistant. Provide structured, accurate documentation with examples, best practices, and links to official resources when available.",
+    },
+    { role: "user", content: prompt },
+  ]);
 }

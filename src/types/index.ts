@@ -3,13 +3,8 @@
  * Centralized exports from focused type modules
  */
 
-// ─── BROWSER & PUPPETEER TYPES ────────────────────────────────────────
+// ─── BROWSER & CONTENT EXTRACTION TYPES ───────────────────────────────
 export type {
-  BrowserConfig,
-  RecoveryContext,
-  ErrorAnalysis,
-  PuppeteerContext,
-  IBrowserManager,
   PageContentResult,
   RecursiveFetchResult,
 } from "./browser.js";

@@ -1,17 +1,15 @@
 /**
  * Tool handler for 'check_deprecated_code'.
- * Analyzes code for deprecated features or patterns and suggests replacements, using the Perplexity search logic.
+ * Analyzes code for deprecated features or patterns and suggests replacements using Perplexity API.
  * @param args - { code: string; technology?: string }
- * @param ctx - PuppeteerContext for browser operations
- * @param performSearch - Function to perform the search (prompt: string, ctx: PuppeteerContext) => Promise<string>
+ * @param apiClient - PerplexityApiClient instance
  * @returns The deprecation analysis string result
  */
-import type { PuppeteerContext } from "../types/index.js";
+import type { PerplexityApiClient } from "../server/modules/PerplexityApiClient.js";
 
 export default async function checkDeprecatedCode(
   args: { code: string; technology?: string },
-  ctx: PuppeteerContext,
-  performSearch: (prompt: string, ctx: PuppeteerContext) => Promise<string>,
+  apiClient: PerplexityApiClient,
 ): Promise<string> {
   const { code, technology = "" } = args;
   const prompt = `Analyze this code for deprecated features or patterns${
@@ -30,5 +28,13 @@ Please provide:
 7. Performance implications
 8. Backward compatibility considerations
 9. Testing recommendations for the changes`;
-  return await performSearch(prompt, ctx);
+
+  return apiClient.chatCompletion([
+    {
+      role: "system",
+      content:
+        "You are a code modernization assistant. Identify deprecated patterns, suggest replacements, and provide migration guidance with before/after examples.",
+    },
+    { role: "user", content: prompt },
+  ]);
 }

@@ -1,17 +1,17 @@
 /**
- * Tool implementation for chat functionality with Perplexity
+ * Tool implementation for chat functionality with Perplexity API
  */
 
 import crypto from "node:crypto";
-import type { ChatMessage, PuppeteerContext } from "../types/index.js";
+import type { ChatMessage } from "../types/index.js";
+import type { PerplexityApiClient } from "../server/modules/PerplexityApiClient.js";
 
 /**
- * Handles chat interactions with conversation history
+ * Handles chat interactions with conversation history via Perplexity API
  */
 export default async function chatPerplexity(
   args: { message: string; chat_id?: string },
-  ctx: PuppeteerContext,
-  performSearch: (prompt: string, ctx: PuppeteerContext) => Promise<string>,
+  apiClient: PerplexityApiClient,
   getChatHistory: (chat_id: string) => ChatMessage[],
   saveChatMessage: (chat_id: string, message: ChatMessage) => void,
 ): Promise<string> {
@@ -20,12 +20,21 @@ export default async function chatPerplexity(
   const userMessage: ChatMessage = { role: "user", content: message };
   saveChatMessage(chat_id, userMessage);
 
-  let conversationPrompt = "";
-  for (const msg of history) {
-    conversationPrompt +=
-      msg.role === "user" ? `User: ${msg.content}\n` : `Assistant: ${msg.content}\n`;
-  }
-  conversationPrompt += `User: ${message}\n`;
+  const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
+    {
+      role: "system",
+      content:
+        "You are a helpful conversational assistant with access to the web via Perplexity. Maintain context from the conversation history and provide accurate, well-sourced answers.",
+    },
+  ];
 
-  return await performSearch(conversationPrompt, ctx);
+  for (const msg of history) {
+    messages.push({ role: msg.role, content: msg.content });
+  }
+  messages.push({ role: "user", content: message });
+
+  const response = await apiClient.chatCompletion(messages);
+
+  saveChatMessage(chat_id, { role: "assistant", content: response });
+  return response;
 }

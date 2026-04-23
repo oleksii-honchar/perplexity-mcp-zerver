@@ -1,14 +1,15 @@
 /**
  * Database utility functions for chat message storage and retrieval
+ * Uses better-sqlite3 (standard Node.js compatible)
  */
 
-import type { Database } from "bun:sqlite";
+import type Database from "better-sqlite3";
 import type { ChatMessage } from "../types/index.js";
 
 /**
  * Initializes the SQLite database schema for chat storage
  */
-export function initializeDatabase(db: Database): void {
+export function initializeDatabase(db: Database.Database): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS chats (
       id TEXT PRIMARY KEY,
@@ -29,24 +30,22 @@ export function initializeDatabase(db: Database): void {
 
 /**
  * Retrieves the chat history for a given chat ID.
- * @param db The bun:sqlite Database instance.
+ * @param db The better-sqlite3 Database instance.
  * @param chatId The chat session ID.
  * @returns An array of chat messages.
  */
-export function getChatHistory(db: Database, chatId: string): ChatMessage[] {
-  const messages = db
-    .query("SELECT role, content FROM messages WHERE chat_id = ? ORDER BY created_at ASC")
-    .all(chatId);
-  return messages as ChatMessage[];
+export function getChatHistory(db: Database.Database, chatId: string): ChatMessage[] {
+  const stmt = db.prepare("SELECT role, content FROM messages WHERE chat_id = ? ORDER BY created_at ASC");
+  return stmt.all(chatId) as ChatMessage[];
 }
 
 /**
  * Saves a chat message to the database, ensuring the chat exists.
- * @param db The bun:sqlite Database instance.
+ * @param db The better-sqlite3 Database instance.
  * @param chatId The chat session ID.
  * @param message The chat message to save.
  */
-export function saveChatMessage(db: Database, chatId: string, message: ChatMessage) {
+export function saveChatMessage(db: Database.Database, chatId: string, message: ChatMessage): void {
   db.prepare("INSERT OR IGNORE INTO chats (id) VALUES (?)").run(chatId);
   db.prepare("INSERT INTO messages (chat_id, role, content) VALUES (?, ?, ?)").run(
     chatId,

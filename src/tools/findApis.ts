@@ -1,16 +1,15 @@
 /**
- * Tool implementation for finding APIs
+ * Tool implementation for finding APIs via Perplexity API
  */
 
-import type { PuppeteerContext } from "../types/index.js";
+import type { PerplexityApiClient } from "../server/modules/PerplexityApiClient.js";
 
 /**
- * Handles API discovery and comparison
+ * Handles API discovery and comparison via Perplexity API
  */
 export default async function findApis(
   args: { requirement: string; context?: string },
-  ctx: PuppeteerContext,
-  performSearch: (prompt: string, ctx: PuppeteerContext) => Promise<string>,
+  apiClient: PerplexityApiClient,
 ): Promise<string> {
   const { requirement, context = "" } = args;
   const prompt = `Find and evaluate APIs that could be used for: ${requirement}. ${
@@ -27,5 +26,13 @@ export default async function findApis(
 9. Code examples for basic usage
 10. Comparison with similar APIs
 11. SDK availability and language support`;
-  return await performSearch(prompt, ctx);
+
+  return apiClient.chatCompletion([
+    {
+      role: "system",
+      content:
+        "You are an API discovery assistant. Help find, compare, and evaluate APIs with details on pricing, authentication, SDKs, and code examples.",
+    },
+    { role: "user", content: prompt },
+  ]);
 }
